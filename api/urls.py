@@ -20,5 +20,12 @@ from spotify import views
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("api/ping", views.ping),
+
+    # Spotify OAuth
+    path("auth/login", views.login_redirect),
+    path("auth/callback", views.auth_callback),
+
+    # Spotify API proxy endpoints
+    path("api/me", views.me),
+    path("api/playlists", views.playlists),
 ]
