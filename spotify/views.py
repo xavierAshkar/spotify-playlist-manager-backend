@@ -1,9 +1,12 @@
+# spotify/views.py
 import os
 import urllib.parse
 import requests
 import time
 import base64
 from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseRedirect
+from django.utils import timezone
+from .models import SpotifyUser
 
 # Load env vars
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
@@ -37,6 +40,8 @@ def login_redirect(_request):
     auth_url = f"https://accounts.spotify.com/authorize?{urllib.parse.urlencode(query_params)}"
     return HttpResponseRedirect(auth_url)
 
+
+
 def auth_callback(request):
     code = request.GET.get("code")
     error = request.GET.get("error")
@@ -68,19 +73,41 @@ def auth_callback(request):
         return HttpResponseBadRequest(f"Failed to get token: {r.text}")
 
     token_data = r.json()
-    access_token = token_data.get("access_token")
-    refresh_token = token_data.get("refresh_token")
-    expires_in = token_data.get("expires_in")  # seconds (usually 3600)
+    access_token = token_data["access_token"]
+    refresh_token = token_data["refresh_token"]
+    expires_in = token_data["expires_in"]
 
-    # Calculate expiration time (epoch seconds)
-    expires_at = int(time.time()) + expires_in
+    expires_at = timezone.now() + timezone.timedelta(seconds=expires_in)
 
-    # TODO: Store refresh_token securely in DB (encrypted) with user record
-    # For now, just log it
-    print("Refresh token (save securely!):", refresh_token)
+    # Get user profile from Spotify
+    me_resp = requests.get(
+        "https://api.spotify.com/v1/me",
+        headers={"Authorization": f"Bearer {access_token}"}
+    )
+    if me_resp.status_code != 200:
+        return HttpResponseBadRequest("Failed to fetch user profile")
 
-    # Send access token & expiry to frontend
+    me = me_resp.json()
+    spotify_id = me["id"]
+    display_name = me.get("display_name")
+    email = me.get("email")
+
+    # Save or update the user in DB
+    user, _ = SpotifyUser.objects.update_or_create(
+        spotify_id=spotify_id,
+        defaults={
+            "display_name": display_name,
+            "email": email,
+            "refresh_token": refresh_token,
+            "expires_at": expires_at,
+        }
+    )
+
+    # Send tokens + profile to frontend
     return JsonResponse({
         "access_token": access_token,
-        "expires_at": expires_at
+        "expires_at": int(time.time()) + expires_in,
+        "spotify_id": spotify_id,
+        "display_name": display_name,
+        "email": email,
     })
