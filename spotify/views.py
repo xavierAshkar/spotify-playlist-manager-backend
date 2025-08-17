@@ -7,6 +7,7 @@ import base64
 from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseRedirect
 from django.utils import timezone
 from .models import SpotifyUser
+from .utils import encrypt_token, decrypt_token
 
 # Load env vars
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
@@ -98,7 +99,7 @@ def auth_callback(request):
         defaults={
             "display_name": display_name,
             "email": email,
-            "refresh_token": refresh_token,
+            "refresh_token": encrypt_token(refresh_token),
             "expires_at": expires_at,
         }
     )
