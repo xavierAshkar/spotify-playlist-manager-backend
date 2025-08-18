@@ -5,9 +5,10 @@ import requests
 import time
 import base64
 from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseRedirect
+from django.views.decorators.http import require_GET
 from django.utils import timezone
 from .models import SpotifyUser
-from .utils import encrypt_token, decrypt_token
+from .utils import encrypt_token, decrypt_token, refresh_access_token, get_valid_access_token
 
 # Load env vars
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
@@ -42,7 +43,6 @@ def login_redirect(_request):
     return HttpResponseRedirect(auth_url)
 
 
-
 def auth_callback(request):
     code = request.GET.get("code")
     error = request.GET.get("error")
@@ -75,40 +75,57 @@ def auth_callback(request):
 
     token_data = r.json()
     access_token = token_data["access_token"]
-    refresh_token = token_data["refresh_token"]
+    refresh_token = token_data.get("refresh_token")  # may be absent in some flows
     expires_in = token_data["expires_in"]
 
-    expires_at = timezone.now() + timezone.timedelta(seconds=expires_in)
-
-    # Get user profile from Spotify
-    me_resp = requests.get(
-        "https://api.spotify.com/v1/me",
-        headers={"Authorization": f"Bearer {access_token}"}
-    )
+    me_resp = requests.get("https://api.spotify.com/v1/me",
+                           headers={"Authorization": f"Bearer {access_token}"})
     if me_resp.status_code != 200:
         return HttpResponseBadRequest("Failed to fetch user profile")
 
     me = me_resp.json()
     spotify_id = me["id"]
-    display_name = me.get("display_name")
-    email = me.get("email")
 
-    # Save or update the user in DB
     user, _ = SpotifyUser.objects.update_or_create(
         spotify_id=spotify_id,
         defaults={
-            "display_name": display_name,
-            "email": email,
-            "refresh_token": encrypt_token(refresh_token),
-            "expires_at": expires_at,
-        }
+            "display_name": me.get("display_name"),
+            "email": me.get("email"),
+            # only set refresh if present (initial auth or rotation)
+            **({"refresh_token": encrypt_token(refresh_token)} if refresh_token else {}),
+        },
     )
 
-    # Send tokens + profile to frontend
+    # save access token + expiry server-side
+    from .utils import set_access_token
+    set_access_token(user, access_token, expires_in)
+
+    # return only identity/session info to frontend
     return JsonResponse({
-        "access_token": access_token,
-        "expires_at": int(time.time()) + expires_in,
         "spotify_id": spotify_id,
-        "display_name": display_name,
-        "email": email,
+        "display_name": user.display_name,
+        "email": user.email,
     })
+
+
+@require_GET
+def get_playlists(request):
+    # e.g., pull the current app user and map to SpotifyUser
+    spotify_id = request.GET.get("spotify_id")  # replace with your auth/session lookup
+    user = SpotifyUser.objects.get(spotify_id=spotify_id)
+
+    access_token = get_valid_access_token(user)
+
+    def fetch(token):
+        return requests.get(
+            "https://api.spotify.com/v1/me/playlists",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+
+    r = fetch(access_token)
+    if r.status_code == 401:
+        # token may be invalidated early — refresh and retry once
+        access_token = refresh_access_token(user)
+        r = fetch(access_token)
+
+    return JsonResponse(r.json(), safe=False, status=r.status_code)

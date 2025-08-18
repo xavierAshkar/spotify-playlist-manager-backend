@@ -7,7 +7,8 @@ class SpotifyUser(models.Model):
     display_name = models.CharField(max_length=255, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
 
-    refresh_token = models.TextField()   # TODO: encrypt this
+    refresh_token = models.TextField()
+    access_token  = models.TextField(blank=True, null=True)
     expires_at = models.DateTimeField()  # when access token expires
 
     created_at = models.DateTimeField(auto_now_add=True)  # set once
