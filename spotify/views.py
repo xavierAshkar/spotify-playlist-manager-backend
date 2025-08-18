@@ -2,7 +2,6 @@
 import os
 import urllib.parse
 import requests
-import time
 import base64
 from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseRedirect, HttpResponseForbidden
 from django.views.decorators.http import require_GET
@@ -212,6 +211,56 @@ def get_playlists_summary(request):
         })
 
     return JsonResponse({"items": summaries}, safe=False)
+
+@require_GET
+def get_playlist_detail(request, pid):
+    sid = request.session.get("spotify_id")
+    if not sid:
+        return HttpResponseForbidden("Not authenticated")
+
+    user = SpotifyUser.objects.get(spotify_id=sid)
+    token = get_valid_access_token(user)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Basic playlist info
+    purl = (
+        f"https://api.spotify.com/v1/playlists/{pid}"
+        "?fields=id,name,images(url),owner(display_name)"
+    )
+    pr = requests.get(purl, headers=headers)
+    if pr.status_code == 401:
+        token = refresh_access_token(user)
+        headers["Authorization"] = f"Bearer {token}"
+        pr = requests.get(purl, headers=headers)
+    if pr.status_code != 200:
+        return JsonResponse({"error": pr.text}, status=pr.status_code, safe=False)
+    pinfo = pr.json()
+
+    # Collect all tracks (100/page)
+    items = []
+    turl = f"https://api.spotify.com/v1/playlists/{pid}/tracks?limit=100&fields=items(track(id,name,artists(name),duration_ms,album(images(url)))),next"
+    while turl:
+        tr = requests.get(turl, headers=headers)
+        if tr.status_code == 401:
+            token = refresh_access_token(user)
+            headers["Authorization"] = f"Bearer {token}"
+            tr = requests.get(turl, headers=headers)
+        if tr.status_code != 200:
+            return JsonResponse({"error": tr.text}, status=tr.status_code, safe=False)
+        data = tr.json()
+        items.extend(data.get("items", []))
+        turl = data.get("next")
+
+    return JsonResponse(
+        {
+            "id": pinfo["id"],
+            "name": pinfo["name"],
+            "images": pinfo.get("images", []),
+            "owner": pinfo.get("owner"),
+            "tracks": {"items": items},
+        },
+        safe=False,
+    )
 
 def root(_request):
     return HttpResponse("""

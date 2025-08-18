@@ -4,6 +4,7 @@ import os
 import base64
 import requests
 from django.utils import timezone
+from datetime import timedelta
 from .models import SpotifyUser
 
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
@@ -20,7 +21,7 @@ def decrypt_token(token: str) -> str:
 def set_access_token(user: SpotifyUser, token: str, expires_in: int):
     user.access_token = encrypt_token(token)
     skew = 60
-    user.expires_at = timezone.now() + timezone.timedelta(seconds=max(0, expires_in - skew))
+    user.expires_at = timezone.now() + timedelta(seconds=max(0, expires_in - skew))
     user.save(update_fields=["access_token", "expires_at"])
 
 def get_stored_access_token(user: SpotifyUser) -> str | None:
