@@ -7,6 +7,7 @@ import base64
 from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseRedirect, HttpResponseForbidden
 from django.views.decorators.http import require_GET
 from django.utils import timezone
+from datetime import timedelta
 from .models import SpotifyUser
 from .utils import encrypt_token, decrypt_token, refresh_access_token, get_valid_access_token
 
@@ -75,36 +76,43 @@ def auth_callback(request):
 
     token_data = r.json()
     access_token = token_data["access_token"]
-    refresh_token = token_data.get("refresh_token")  # may be absent in some flows
-    expires_in = token_data["expires_in"]
+    refresh_token = token_data.get("refresh_token")
+    expires_in   = token_data["expires_in"]
 
+    # compute expiry now so creation won't violate NOT NULL
+    expires_at = timezone.now() + timedelta(seconds=expires_in)
+
+    # fetch profile (unchanged)
     me_resp = requests.get("https://api.spotify.com/v1/me",
                            headers={"Authorization": f"Bearer {access_token}"})
     if me_resp.status_code != 200:
         return HttpResponseBadRequest("Failed to fetch user profile")
-
     me = me_resp.json()
     spotify_id = me["id"]
 
+    # build defaults; only set refresh_token if present (Spotify may omit on re-auth)
+    defaults = {
+        "display_name": me.get("display_name") or me.get("id"),
+        "email": me.get("email"),
+        "expires_at": expires_at,
+        # Optional: write the access token now to avoid a second update.
+        "access_token": encrypt_token(access_token),
+    }
+    if refresh_token:
+        defaults["refresh_token"] = encrypt_token(refresh_token)
+
     user, _ = SpotifyUser.objects.update_or_create(
         spotify_id=spotify_id,
-        defaults={
-            "display_name": me.get("display_name"),
-            "email": me.get("email"),
-            # only set refresh if present (initial auth or rotation)
-            **({"refresh_token": encrypt_token(refresh_token)} if refresh_token else {}),
-        },
+        defaults=defaults,
     )
 
-    # save access token + expiry server-side
-    from .utils import set_access_token
-    set_access_token(user, access_token, expires_in)
+    # If you prefer to centralize token writes, keep this — it’ll just update again.
+    # from .utils import set_access_token
+    # set_access_token(user, access_token, expires_in)
 
-    # put spotify_id in the Django session
     request.session['spotify_id'] = user.spotify_id
-    request.session.set_expiry(60 * 60 * 24 * 7)  # 7 days, adjust as needed
+    request.session.set_expiry(60 * 60 * 24 * 7)
 
-    # redirect to your React app instead of returning JSON
     frontend = os.getenv("FRONTEND_APP_URL") or "http://localhost:5173"
     return HttpResponseRedirect(frontend)
 
