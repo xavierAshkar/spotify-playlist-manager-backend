@@ -4,7 +4,7 @@ import urllib.parse
 import requests
 import time
 import base64
-from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
+from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseRedirect, HttpResponseForbidden
 from django.views.decorators.http import require_GET
 from django.utils import timezone
 from .models import SpotifyUser
@@ -110,11 +110,25 @@ def auth_callback(request):
 
 
 @require_GET
-def get_playlists(request):
-    # e.g., pull the current app user and map to SpotifyUser
-    spotify_id = request.GET.get("spotify_id")  # replace with your auth/session lookup
-    user = SpotifyUser.objects.get(spotify_id=spotify_id)
+def session_me(request):
+    sid = request.session.get("spotify_id")
+    if not sid:
+        return JsonResponse({"authenticated": False}, status=401)
+    u = SpotifyUser.objects.get(spotify_id=sid)
+    return JsonResponse({
+        "authenticated": True,
+        "spotify_id": u.spotify_id,
+        "display_name": u.display_name,
+        "email": u.email,
+    })
 
+@require_GET
+def get_playlists(request):
+    sid = request.session.get("spotify_id")
+    if not sid:
+        return HttpResponseForbidden("Not authenticated")
+
+    user = SpotifyUser.objects.get(spotify_id=sid)
     access_token = get_valid_access_token(user)
 
     def fetch(token):
@@ -125,11 +139,71 @@ def get_playlists(request):
 
     r = fetch(access_token)
     if r.status_code == 401:
-        # token may be invalidated early — refresh and retry once
         access_token = refresh_access_token(user)
         r = fetch(access_token)
 
     return JsonResponse(r.json(), safe=False, status=r.status_code)
+
+@require_GET
+def get_playlists_summary(request):
+    sid = request.session.get("spotify_id")
+    if not sid:
+        return HttpResponseForbidden("Not authenticated")
+
+    user = SpotifyUser.objects.get(spotify_id=sid)
+    token = get_valid_access_token(user)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # fetch all playlists (50 per page) with only fields we need
+    playlists = []
+    url = "https://api.spotify.com/v1/me/playlists?limit=50&fields=items(id,name,images(url),tracks(total),owner(display_name),public),next"
+    while url:
+        r = requests.get(url, headers=headers)
+        if r.status_code == 401:
+            token = refresh_access_token(user)
+            headers["Authorization"] = f"Bearer {token}"
+            r = requests.get(url, headers=headers)
+        if r.status_code != 200:
+            return JsonResponse({"error": r.text}, status=r.status_code, safe=False)
+        data = r.json()
+        playlists.extend(data.get("items", []))
+        url = data.get("next")
+
+    # sum durations for each playlist
+    summaries = []
+    for pl in playlists:
+        pid = pl["id"]
+        image_url = (pl.get("images") or [{}])[0].get("url")
+        tracks_total = pl.get("tracks", {}).get("total", 0)
+
+        total_ms = 0
+        turl = f"https://api.spotify.com/v1/playlists/{pid}/tracks?limit=100&fields=items(track(duration_ms)),next"
+        while turl:
+            tr = requests.get(turl, headers=headers)
+            if tr.status_code == 401:
+                token = refresh_access_token(user)
+                headers["Authorization"] = f"Bearer {token}"
+                tr = requests.get(turl, headers=headers)
+            if tr.status_code != 200:
+                total_ms = None  # fall back if something goes wrong
+                break
+            tdata = tr.json()
+            for item in tdata.get("items", []):
+                track = item.get("track") or {}
+                dur = track.get("duration_ms")
+                if isinstance(dur, int):
+                    total_ms += dur
+            turl = tdata.get("next")
+
+        summaries.append({
+            "id": pid,
+            "name": pl["name"],
+            "image_url": image_url,
+            "tracks_total": tracks_total,
+            "total_duration_ms": total_ms,
+        })
+
+    return JsonResponse({"items": summaries}, safe=False)
 
 def root(_request):
     return HttpResponse("""

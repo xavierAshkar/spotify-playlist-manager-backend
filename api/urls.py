@@ -27,6 +27,7 @@ urlpatterns = [
     path("auth/callback", views.auth_callback),
 
     # Spotify API proxy endpoints
-    #path("api/me", views.me),
+    path("api/session", views.session_me),
     path("api/playlists", views.get_playlists),
+    path("api/playlists/summary", views.get_playlists_summary)
 ]
