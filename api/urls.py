@@ -19,6 +19,7 @@ from django.urls import path
 from spotify import views
 
 urlpatterns = [
+    path("", views.root),
     path("admin/", admin.site.urls),
 
     # Spotify OAuth

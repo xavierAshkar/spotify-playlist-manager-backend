@@ -55,9 +55,10 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-CORS_ALLOWED_ORIGINS = ["http://localhost:5173"]  # Vite dev
-CSRF_TRUSTED_ORIGINS = ["http://localhost:5173"]  # useful once you POST
-SESSION_COOKIE_NAME = "spm_session"               # optional, nice for dev tools
+CORS_ALLOWED_ORIGINS = ["http://localhost:5173"]
+CSRF_TRUSTED_ORIGINS = ["http://localhost:5173"]
+CORS_ALLOW_CREDENTIALS = True
+SESSION_COOKIE_NAME = "spm_session"
 
 ROOT_URLCONF = "api.urls"
 

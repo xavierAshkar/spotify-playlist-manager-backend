@@ -4,7 +4,7 @@ import urllib.parse
 import requests
 import time
 import base64
-from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseRedirect
+from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
 from django.views.decorators.http import require_GET
 from django.utils import timezone
 from .models import SpotifyUser
@@ -100,12 +100,13 @@ def auth_callback(request):
     from .utils import set_access_token
     set_access_token(user, access_token, expires_in)
 
-    # return only identity/session info to frontend
-    return JsonResponse({
-        "spotify_id": spotify_id,
-        "display_name": user.display_name,
-        "email": user.email,
-    })
+    # put spotify_id in the Django session
+    request.session['spotify_id'] = user.spotify_id
+    request.session.set_expiry(60 * 60 * 24 * 7)  # 7 days, adjust as needed
+
+    # redirect to your React app instead of returning JSON
+    frontend = os.getenv("FRONTEND_APP_URL") or "http://localhost:5173"
+    return HttpResponseRedirect(frontend)
 
 
 @require_GET
@@ -129,3 +130,18 @@ def get_playlists(request):
         r = fetch(access_token)
 
     return JsonResponse(r.json(), safe=False, status=r.status_code)
+
+def root(_request):
+    return HttpResponse("""
+      <html>
+        <head><title>Spotify Manager</title></head>
+        <body style="font-family: sans-serif; padding: 24px;">
+          <h1>Spotify Playlist Manager</h1>
+          <p>Connect your Spotify to continue.</p>
+          <a href="/auth/login"
+             style="display:inline-block;padding:10px 14px;background:#1DB954;color:#fff;text-decoration:none;border-radius:6px;">
+             Connect Spotify
+          </a>
+        </body>
+      </html>
+    """)
