@@ -19,6 +19,15 @@ from django.urls import path
 from spotify import views
 
 urlpatterns = [
+    path("", views.root),
     path("admin/", admin.site.urls),
-    path("api/ping", views.ping),
+
+    # Spotify OAuth
+    path("auth/login", views.login_redirect),
+    path("auth/callback", views.auth_callback),
+
+    # Spotify API proxy endpoints
+    path("api/session", views.session_me),
+    path("api/playlists", views.get_playlists),
+    path("api/playlists/summary", views.get_playlists_summary)
 ]
