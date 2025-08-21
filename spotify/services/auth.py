@@ -1,10 +1,11 @@
 # spotify/services/auth.py
 """
-Auth/service layer for Spotify OAuth.
-- Exchanges authorization codes for tokens.
-- Fetches the user's Spotify profile.
-- Upserts the user + encrypted tokens into the DB.
-- Provides helpers to generate/validate OAuth `state` for CSRF protection.
+This module handles Spotify OAuth 2.0 authentication flow:
+ - Generates and validates CSRF-safe OAuth `state`.
+ - Exchanges authorization code for access/refresh tokens.
+ - Fetches the user's Spotify profile.
+ - Upserts the user + encrypted tokens into the DB.
+ - Provides helpers to generate/validate OAuth `state` for CSRF protection.
 """
 
 from __future__ import annotations
