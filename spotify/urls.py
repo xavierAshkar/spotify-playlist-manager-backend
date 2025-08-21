@@ -1,6 +1,6 @@
 # spotify/urls.py
 from django.urls import path
-from .views import auth, session, playlists, tracks, root
+from .views import auth, session, playlists, root, tracks
 
 urlpatterns = [
     # Root + health
@@ -19,6 +19,6 @@ urlpatterns = [
     path("api/playlists/summary", playlists.get_playlists_summary),
     path("api/playlists/<str:pid>", playlists.get_playlist_detail),
 
-    # Tracks (for use by queue MVP)
+    # Liked tracks (for the queue panel data source)
     path("api/spotify/liked-tracks", tracks.liked_tracks),
 ]
