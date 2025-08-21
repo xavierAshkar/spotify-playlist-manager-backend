@@ -1,7 +1,6 @@
+# spotify/clients/spotify.py
 ''' 
-spotify/clients/spotify.py
-
-This file is used to make HTTP requests to the Spotify API.
+Client layer for Spotify API interactions.
  - Provides functions to perform GET and POST requests with the necessary authentication headers.
  - Centralizes requests to the Spotify API, making it easier to manage and modify.
 '''
