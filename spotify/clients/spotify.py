@@ -5,6 +5,7 @@ This file is used to make HTTP requests to the Spotify API.
  - Provides functions to perform GET and POST requests with the necessary authentication headers.
  - Centralizes requests to the Spotify API, making it easier to manage and modify.
 '''
+
 import requests
 
 BASE = "https://api.spotify.com/v1"
